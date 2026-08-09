@@ -1,0 +1,20 @@
+{
+  "name": "claude-um-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test/resolve.test.mjs",
+    "um": "node src/cli.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "description": "A CLI client that lets an LLM agent play UltiMafia (ultimafia.com).",
+  "type": "module",
+  "dependencies": {
+    "ws": "^8.21.3"
+  },
+  "bin": {
+    "um": "src/cli.js"
+  }
+}

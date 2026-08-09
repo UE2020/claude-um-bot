@@ -1,0 +1,13 @@
+node_modules/
+
+# Credentials — config.json holds a live session cookie. Never commit it.
+config.json
+.env
+
+# Runtime state and caches
+cache/
+run/
+scratch/
+
+# Local clone of the UltiMafia server source, used only for reference
+um-src/

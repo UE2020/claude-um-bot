@@ -1,0 +1,67 @@
+{
+  "_README": "Corrections and strategic notes for roles whose in-game description text is misleading or incomplete. The descriptions from /api/roles/raw are authoritative about intent but are sometimes badly worded; each note here was verified against the role's actual card implementation in the UltiMafia source. Shown by `um role`, `um setup` and `um state`.",
+
+  "Janitor": {
+    "verifiedIn": "Games/types/Mafia/roles/cards/CleanDeath.js",
+    "correction": "The description ('hide and learn the role of the player killed by the Mafia') badly undersells this. The real effect is that the cleaned kill produces NO ROLE FLIP for the town at all, and the victim's LAST WILL is also wiped. The Janitor privately learns the role. Normally every death reveals a role, so this is the one death per game that doesn't.",
+    "strategy": "This is the setup's central mechanic, not a minor info ability. Because exactly one player died with no flip, the Janitor can claim that dead player's role with no possible counter-claim — the real holder is dead. That means EVERY claim in the game carries permanent uncertainty. The sole exception is the Sheriff, whose starting Gun mechanically reveals the shooter when used, which cannot be faked. Treat a no-flip night death as a licence for mafia to claim that role, and weight self-proving mechanical evidence far above claims.",
+    "usage": "Once per game, on ANY night — the meeting keeps appearing until used. But USE IT NIGHT ONE essentially always. Verified in the card: cleanedPlayer is only set after action.dominates(target) passes, so if the kill is blocked, saved or eaten by armor the ability is NOT consumed and returns next night. Voting Yes on N1 is therefore free — there is no wasted-on-a-failed-kill risk to hedge against.",
+    "whyNightOne": "THE KEY PRINCIPLE: the clean's value comes from the victim being UNIDENTIFIED, not from the victim being powerful. Hiding a flip only buys anything if town cannot already infer the role by other means. Public claims accumulate and are never forgotten, so the pool of things town can infer tends to grow — meaning the clean's value tends to DECAY every day. N1 in a nightstart setup is before any claim exists at all, so it is the strongest moment available.\n\nTENDENCY, NOT LAW: claims are permanent but not necessarily TRUE, so accumulating claims does not cleanly equal accumulating knowledge. Players fake-claim constantly, town included, and conflicting claims can leave town less certain than before. Do not reason as though every public claim is a fixed fact — it is a fixed ASSERTION. This is the same failure as the D1 'a townie wouldn't say that' mistake: treating a clean-looking model of player behaviour as reliable.\n\nCorollary, and the trap to avoid: janning a player who has PUBLICLY CLAIMED a power role is close to worthless, and it is the exact target the 'wait for a better role' instinct steers you toward. Town does not need the flip — they remember the D2 Cop claim and that he then died, which if anything corroborates the claim. Zero uncertainty is created. And it is actively bad for the Janitor: the role is now publicly accounted for, so claiming it yourself is a transparent lie. It fails on both axes simultaneously.\n\nSupporting reasons: an unused ability is worth zero and the Janitor can be condemned D1 or shot by the Sheriff; and it is free to attempt (see usage). Holding past N1 is a WIFOM/framing play ('only so-and-so would do this'), never a mechanical one."
+  },
+
+  "Sheriff": {
+    "verifiedIn": "data/roles.js + observed system message",
+    "correction": "The starting Gun ALWAYS reveals the shooter. Using it emits a public system message of the form ':gun: <shooter> pulls a gun and shoots at <target>!'",
+    "strategy": "This makes the Sheriff the only self-confirming town role in setups like Frontier Justice and TSIB. Once they shoot, they are confirmed town and cannot be counter-claimed. In a Janitor setup this is the single reliable anchor of truth.",
+    "importantException": "SETUP DEPENDENT — do NOT treat the gunshot message as unfakeable by default. If an ILLUSIONIST is in the setup (e.g. Hollywood Illusion), they frame another player as the shooter of their own gun, so ':gun: X shoots Y' can be a deliberate lie. Always check the roster for gun-framing or appearance-editing roles before treating any system message as ground truth."
+  },
+
+  "Lawyer": {
+    "verifiedIn": "data/roles.js",
+    "correction": "Makes the target appear as an opposing VANILLA role to information roles — so a lawyered mafia reads innocent to Cop.",
+    "strategy": "With the Loyal modifier, visiting a player of the opposite alignment blocks the Lawyer's secondary actions. A Cop 'innocent' on a mafia is the expected outcome here, so innocents are weaker evidence than guilties."
+  },
+
+  "Journalist": {
+    "verifiedIn": "data/roles.js",
+    "correction": "Learns what REPORTS the target received that night, not their role or alignment.",
+    "strategy": "Strong cross-check on claimed investigative results: a fake Cop claim can be caught because the Journalist sees whether that player actually received a report. Especially valuable in Janitor setups where claims are otherwise unfalsifiable."
+  },
+
+  "Illusionist": {
+    "verifiedIn": "data/roles.js",
+    "correction": "Has a Gun that reveals the shooter when used, AND each night frames another player as the apparent user of any Gun they fire. So the public ':gun: X pulls a gun and shoots at Y' message can name an innocent framed player instead of the real shooter.",
+    "strategy": "This single role destroys the usual anchor of truth. In most setups a gunshot reveal confirms the shooter; here it confirms nothing. If a gunshot names someone, consider that the Illusionist framed them — and expect town to condemn the framed player. Corollary: a Gunsmith-armed townie who shoots may be blamed for a mafia kill.",
+    "convention": "THE FIRST SHOT OF THE GAME IS USUALLY THE ILLUSIONIST (per an experienced UM player). They start armed, so an early gunshot is more likely mafia opening than a town Gunsmith gun being used. Treat the first ':gun:' message with heavy suspicion of the NAMED shooter being framed."
+  },
+
+  "Actress": {
+    "verifiedIn": "data/roles.js",
+    "correction": "Learns a target's role each night AND then appears as that role both to information roles and ON DEATH. So her flip is a lie.",
+    "strategy": "Role flips are normally the most reliable evidence in the game. With an Actress alive, a flip can be fabricated — she can die 'as' a townie she visited. Do not treat flips as ground truth in this setup."
+  },
+
+  "Typist": {
+    "verifiedIn": "data/roles.js",
+    "correction": "On death, ALL players become 'Purblind' the following Day, meaning nobody can see votes.",
+    "strategy": "A Purblind day breaks vote-reading entirely: you cannot see the tally, so you cannot tell who is the plurality leader or whether the phase is about to resolve. Track votes manually from chat if this happens, and be extra careful about the instant-resolution rule since the usual warning signs are invisible."
+  },
+
+  "Bleeder": {
+    "verifiedIn": "data/roles.js + guidance from an experienced UM player",
+    "correction": "Survives the first kill on them but starts 'Bleeding' and dies during the NEXT night.",
+    "strategy": "AS BLEEDER, CLAIM IMMEDIATELY on day one so the Gunsmith knows to gun you. The Bleeder is effectively a one-time-immune gun holder: a nightkill cannot remove the gun before it is fired, because you survive the first hit and are still alive (Bleeding) the next day to shoot. Your remaining day is free information — you are dead regardless, so spend it."
+  },
+
+  "Gunsmith": {
+    "verifiedIn": "guidance from an experienced UM player",
+    "correction": "Gives a Gun each night. The Gun is used during the day to kill.",
+    "strategy": "GUN THE BLEEDER if there is one. They survive the first kill, so the gun cannot be sniped off them before it fires — any other target can simply be killed at night holding it. Giving the gun to anyone else ('fungunning') is EXTREMELY suboptimal and is a known beginner error."
+  },
+
+  "Villager": {
+    "verifiedIn": "terminology, per an experienced UM player",
+    "correction": "Called 'a blue' on UM. 'Blue' means the vanilla Villager SPECIFICALLY — it is not a general word for any town-aligned player. Do not call a Cop or Sheriff 'a blue'.",
+    "strategy": "Some experienced blues hardclaim a power role in a Janitor setup to bait a counter-claim: if CC'd they retract (the real PR is alive), and if nobody CCs they infer the mafia janned that PR and did not dare CC. RECOGNISE this — a retracted PR claim is not automatically a caught liar — but DO NOT run it. It is dangerous: it gets you condemned, burns town's information, and can get the real PR killed."
+  }
+}

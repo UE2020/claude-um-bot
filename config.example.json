@@ -1,0 +1,6 @@
+{
+  "baseUrl": "https://ultimafia.com",
+  "socketUrl": "wss://ultimafia.com",
+  "cookie": "connect.sid=<your session cookie>",
+  "csrf": "<your x-csrf value>"
+}

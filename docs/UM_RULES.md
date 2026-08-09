@@ -209,6 +209,26 @@ condemn is not the same as making it happen: state the deadline out loud
 ("both clears die tonight, this is our last informed day") and drive
 consolidation onto one target.
 
+## Claims are usually IMPLICIT — a stated result IS a claim
+
+Players here almost never say "I am the Cop." They say **"x inno"**, and the
+table reads it as a cop claim without discussion. Stating a *result* is how you
+claim the role that produces it.
+
+So parse for **information statements**, not role announcements:
+
+- "x inno" / "y guilty" -> a cop claim
+- "I had z town d1" -> a claim to whatever role generates that read, plus the report
+- "nobody visited me" -> a claim to a role that would know
+
+The moment you see one, log it as a claim and start the uncced clock on it.
+Do not stand around asking someone to claim when they already have — you look
+obtuse, you waste the phase, and you lose credibility precisely when you need it.
+
+**Then check the report against known flips.** A claimed read that matches a
+later flip is strong corroboration; one that contradicts a flip is a caught lie.
+This is some of the hardest evidence available in a setup with no live cop.
+
 ## TRUST UNCOUNTERCLAIMED CLAIMS. This is a default, not a judgement call.
 
 **If a role claim goes uncounterclaimed after a reasonable window, treat it as
@@ -329,8 +349,9 @@ all off-limits as reasons to condemn.
 ## Practical checklist each phase
 
 1. `um state` — read phase, timer, your role, who is alive, new reports.
-2. **List the claims. Anything uncced after a live window is TRUE — build the
-   role math on it and stop testing it.** (See the uncced section; this is the
+2. **List the claims — INCLUDING IMPLICIT ONES.** A stated result ("x inno",
+   "I had y town") is a claim. Anything uncced after a live window is TRUE —
+   build the role math on it and stop testing it. (See the uncced section; this is the
    step most often skipped, twice at real cost.)
 3. **Count for autowin**: candidates who can still be mafia vs town's
    miscondemn budget. If `candidates <= budget + 1`, stop analysing and execute.

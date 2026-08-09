@@ -137,6 +137,9 @@ The full reasoning is in `docs/UM_RULES.md`. The parts most often got wrong:
 - **A phase ends INSTANTLY** once every voter has voted and there is a single
   plurality leader. If a wagon is on you, *unvoting blocks that* and buys
   talking time — but only if your own vote is part of the plurality.
+- **Claims are usually implicit.** Nobody says "I am the Cop" — they say "x
+  inno". A stated result IS a claim to the role that produces it. Parse for
+  information statements, and cross-check reports against later flips.
 - **Trust uncounterclaimed claims.** Not counter-claiming is throwing the game,
   so silence after a live window is near-proof. Do not invent cleverer tests for
   something the silence already settled.

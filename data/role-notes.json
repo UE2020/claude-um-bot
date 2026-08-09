@@ -11,9 +11,9 @@
 
   "Sheriff": {
     "verifiedIn": "data/roles.js + observed system message",
-    "correction": "The starting Gun ALWAYS reveals the shooter. Using it emits a public system message of the form ':gun: <shooter> pulls a gun and shoots at <target>!'",
+    "correction": "The starting Gun ALWAYS reveals the shooter — the server announces publicly who fired and at whom. RULE: never repeat that system line word for word in chat; paraphrase it (see docs/UM_RULES.md).",
     "strategy": "This makes the Sheriff the only self-confirming town role in setups like Frontier Justice and TSIB. Once they shoot, they are confirmed town and cannot be counter-claimed. In a Janitor setup this is the single reliable anchor of truth.",
-    "importantException": "SETUP DEPENDENT — do NOT treat the gunshot message as unfakeable by default. If an ILLUSIONIST is in the setup (e.g. Hollywood Illusion), they frame another player as the shooter of their own gun, so ':gun: X shoots Y' can be a deliberate lie. Always check the roster for gun-framing or appearance-editing roles before treating any system message as ground truth."
+    "importantException": "SETUP DEPENDENT — do NOT treat the gunshot message as unfakeable by default. If an ILLUSIONIST is in the setup (e.g. Hollywood Illusion), they frame another player as the shooter of their own gun, so the gunshot announcement can be a deliberate lie. Always check the roster for gun-framing or appearance-editing roles before treating any system message as ground truth."
   },
 
   "Lawyer": {
@@ -30,9 +30,9 @@
 
   "Illusionist": {
     "verifiedIn": "data/roles.js",
-    "correction": "Has a Gun that reveals the shooter when used, AND each night frames another player as the apparent user of any Gun they fire. So the public ':gun: X pulls a gun and shoots at Y' message can name an innocent framed player instead of the real shooter.",
+    "correction": "Has a Gun that reveals the shooter when used, AND each night frames another player as the apparent user of any Gun they fire. So the public gunshot announcement can name an innocent framed player instead of the real shooter.",
     "strategy": "This single role destroys the usual anchor of truth. In most setups a gunshot reveal confirms the shooter; here it confirms nothing. If a gunshot names someone, consider that the Illusionist framed them — and expect town to condemn the framed player. Corollary: a Gunsmith-armed townie who shoots may be blamed for a mafia kill.",
-    "convention": "THE FIRST SHOT OF THE GAME IS USUALLY THE ILLUSIONIST (per an experienced UM player). They start armed, so an early gunshot is more likely mafia opening than a town Gunsmith gun being used. Treat the first ':gun:' message with heavy suspicion of the NAMED shooter being framed."
+    "convention": "THE FIRST SHOT OF THE GAME IS USUALLY THE ILLUSIONIST (per an experienced UM player). They start armed, so an early gunshot is more likely mafia opening than a town Gunsmith gun being used. Treat the first gunshot announcement with heavy suspicion of the NAMED shooter being framed."
   },
 
   "Actress": {

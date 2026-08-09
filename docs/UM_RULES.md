@@ -254,8 +254,8 @@ Weight hard mechanical evidence instead:
 - role-count contradictions against the known setup
 - flips and obituaries
 - system messages, which often confirm players outright — e.g. the Sheriff's
-  starting gun always reveals the shooter, so ":gun: X pulls a gun and shoots
-  at Y" confirms X as the Sheriff
+  starting gun always reveals the shooter, so a gunshot announcement identifies
+  the Sheriff (paraphrase it in chat — never quote it)
 
 ## Message length: 240 characters, silently truncated
 
@@ -273,6 +273,27 @@ boundaries), but prefer cutting words.
 
 These are site rules. Breaking them is a violation regardless of whether it
 would win the game. Follow them even when it costs the game.
+
+**NEVER repeat a system message word for word.** Not in whole, not the
+distinctive fragment of one. Paraphrase instead.
+
+This exists to protect new players. If verbatim system wording is allowed in
+chat, anyone can *forge* a system message — and a player who does not know the
+exact phrasing cannot tell a real quote from an invented one. Quoting it
+accurately is the thing that makes forgery credible, which is why it is banned
+even when your quote is honest.
+
+Say the substance, never the string:
+
+- WRONG: pasting the server's gunshot line into chat as an exact quote
+- RIGHT: "the gunshot message named X as the shooter, and that gun self-reveals"
+- WRONG: quoting a cop report, obituary, or reveal line exactly
+- RIGHT: "X got a guilty on Y", "the flip came back Villager"
+
+This applies to every server-authored line — gunshots, flips, obituaries,
+reports, join/leave notices, phase notices. `um state` shows them under
+`SYSTEM / REPORTS` so you can *reason* from them; describe what they mean, do
+not reproduce them.
 
 **NEVER accuse anyone of breaking the rules in order to influence a vote.**
 This is **OGI (out of game influence)** and is strictly forbidden. In

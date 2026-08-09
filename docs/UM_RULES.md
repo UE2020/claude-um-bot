@@ -209,6 +209,33 @@ condemn is not the same as making it happen: state the deadline out loud
 ("both clears die tonight, this is our last informed day") and drive
 consolidation onto one target.
 
+## SYSTEM MESSAGES MAY BE PRIVATE TO YOU. Never restate them as public.
+
+**This is the single most costly mistake available to you.**
+
+Server-authored messages are delivered *per recipient*. A faction-only alert —
+"you learn X is the President", a cop report, a partner reveal — arrives in your
+feed looking exactly like public lore, because `Message.parseMessageInfoObj`
+upstream **strips all recipient information before it reaches the client**.
+There is no flag. The client cannot tell, and neither can you.
+
+So the rule is absolute: **treat everything under `SYSTEM / REPORTS` as
+potentially private to you.** Before repeating any of it, ask "was this sent to
+everyone, or only to my side?" — and if you cannot prove it was global, do not
+repeat it.
+
+**Worked example (CJK Infinite, cost the game).** The setup announced the
+President by name. It looked like public lore, so I restated it in the open
+Village meeting — "hewwo = pres". But that announcement goes to *Village only*;
+the mafia Sniper did not know who to shoot until I told them. In a setup where
+killing the President is an instant mafia win, that is handing over the win
+condition. Only a Sniper misplay — shooting me instead — kept it from ending
+there.
+
+Related: **when you are dead, the living cannot hear you.** Dead chat is
+graveyard-only. Anything you "tell town" from the grave goes nowhere, so plan to
+pass information *before* you die, not after. `um state` warns you on both counts.
+
 ## Claims are usually IMPLICIT — a stated result IS a claim
 
 Players here almost never say "I am the Cop." They say **"x inno"**, and the

@@ -110,20 +110,26 @@ lines — gunshots, flips, cop reports, obituaries. Quoting them verbatim lets
 anyone forge one, and a new player cannot tell a real quote from an invented
 one. Say "the gunshot named X as the shooter", never the exact string.
 
-**3. Never accuse anyone of breaking the rules to influence a vote.** On UM this
+**3. System messages may be PRIVATE to you — never restate them as public.**
+The wire format strips recipient info, so a faction-only alert (a cop report, a
+partner reveal, "X is the President") is indistinguishable from public lore in
+your feed. Repeating one can hand the enemy the win condition. Also: when dead,
+the living cannot hear you — dead chat is graveyard-only.
+
+**4. Never accuse anyone of breaking the rules to influence a vote.** On UM this
 is OGI (out of game influence) and is forbidden. Do not say or imply that a
 player is gamethrowing, quitting because they are losing, deliberately idling,
 or under-participating. Argue the play, never the player's conduct. Report real
 violations after the game, not in chat.
 
-**4. Joining an open game seats you as a PLAYER.** There is no spectate flag on
+**5. Joining an open game seats you as a PLAYER.** There is no spectate flag on
 join. Do not connect to a game you do not intend to play — leaving mid-game
 penalises you and degrades the game for everyone else.
 
-**5. Do not go silent.** Being an accurate but mute analyst gets you condemned.
+**6. Do not go silent.** Being an accurate but mute analyst gets you condemned.
 If you are quiet for a whole phase, players reasonably read it as evasion.
 
-**6. Be honest about what you are.** Lying about your in-game role is the game.
+**7. Be honest about what you are.** Lying about your in-game role is the game.
 Lying about being an AI is not. Check that the site's moderators are okay with
 automated play before you start.
 

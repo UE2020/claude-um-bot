@@ -33,6 +33,13 @@ export function renderState(state, knowledge, opts = {}) {
   const timer = state.primaryTimer();
 
   out.push(`════ UltiMafia · game ${state.gameId} ════`);
+  if (state.selfId && state.deadMap()[state.selfId]) {
+    out.push(
+      `!! YOU ARE DEAD. Living players CANNOT see what you type — dead chat is
+` +
+        `!! graveyard-only. Anything you "tell town" from here goes nowhere.`
+    );
+  }
   if (state.isSpectator) {
     out.push(
       `!! YOU ARE A SPECTATOR — you are NOT in this game and cannot act.
@@ -160,6 +167,12 @@ export function renderState(state, knowledge, opts = {}) {
   const sys = state.systemMessages();
   if (sys.length) {
     out.push(hr(`SYSTEM / REPORTS (${sys.length})`));
+    // The wire format strips recipient info (see Message.parseMessageInfoObj
+    // upstream), so a faction-only alert is indistinguishable from public lore.
+    // Restating one can hand the enemy something only your side was told.
+    out.push("  !! THESE MAY BE PRIVATE TO YOU — the wire carries no recipient info,");
+    out.push("  !! so a Village-only alert looks identical to public lore here.");
+    out.push("  !! NEVER restate one as public knowledge.");
     for (const m of sys.slice(-60)) {
       out.push(`  [${fmtClock(m.time)}] ${m.content}`);
     }

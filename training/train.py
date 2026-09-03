@@ -44,6 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-length", type=int, default=3072)
     parser.add_argument("--epochs", type=float, default=1.0)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
+    parser.add_argument("--warmup-steps", type=int, default=50)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--eval-batch-size", type=int, default=2)
     parser.add_argument("--gradient-accumulation", type=int, default=8)
@@ -258,12 +259,20 @@ def main() -> int:
         "json",
         data_files={"train": str(train_path), "eval": str(eval_path)},
     )
-    # Keep only the conversational column; metadata is useful for validation,
-    # but should never become model input.
+    # TRL natively accepts a `messages` column, but some Unsloth-patched TRL
+    # versions still require either a formatting_func or prompt/completion
+    # columns. Use conversational prompt/completion records: they preserve the
+    # model's chat template and give the trainer an exact completion mask.
+    def to_prompt_completion(example: dict[str, Any]) -> dict[str, Any]:
+        messages = example["messages"]
+        return {"prompt": messages[:-1], "completion": messages[-1:]}
+
     for split in ("train", "eval"):
-        remove = [column for column in dataset[split].column_names if column != "messages"]
-        if remove:
-            dataset[split] = dataset[split].remove_columns(remove)
+        dataset[split] = dataset[split].map(
+            to_prompt_completion,
+            remove_columns=dataset[split].column_names,
+            desc=f"Preparing {split} prompts and completions",
+        )
     if args.max_train_samples:
         dataset["train"] = dataset["train"].select(
             range(min(args.max_train_samples, len(dataset["train"])))
@@ -277,14 +286,14 @@ def main() -> int:
     config = SFTConfig(
         output_dir=str(output_dir),
         max_length=args.max_length,
-        assistant_only_loss=True,
+        completion_only_loss=True,
         packing=False,
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.eval_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation,
         num_train_epochs=args.epochs,
         learning_rate=args.learning_rate,
-        warmup_ratio=0.03,
+        warmup_steps=args.warmup_steps,
         lr_scheduler_type="cosine",
         optim="adamw_8bit",
         logging_steps=args.logging_steps,

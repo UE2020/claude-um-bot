@@ -22,6 +22,8 @@ um-src/
 /mafia.db-*
 /data/*.jsonl
 /data/*.zip
+/data/**/*.jsonl
+/data/**/*.zip
 
 # Fine-tuning artifacts are large and may contain memorized training text.
 /training-output/

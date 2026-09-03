@@ -103,8 +103,8 @@ allocating the model:
 Then train. Checkpoints and the final adapter go directly to Drive, so a Colab
 disconnect does not erase them. No model-hub upload or experiment tracker is
 enabled, and metadata is removed before the dataset is passed to the trainer.
-Loss is computed only on the assistant response, not on the private briefing
-that precedes it.
+Loss is computed only on the assistant response, not on the perspective-specific
+briefing that precedes it.
 
 ```python
 !python training/train.py \
@@ -120,9 +120,11 @@ the plumbing before a full run, add `--max-train-samples 64
 --max-eval-samples 32 --epochs 0.05` and omit `--save-gguf`.
 
 The defaults are a 4-bit LoRA, sequence length 3072, effective batch size 16,
-one epoch, a 2e-4 learning rate, evaluation/checkpointing every 200 steps and at
-most two retained checkpoints. Current TRL accepts the dataset's conversational
-`messages` structure directly; the harness uses `assistant_only_loss=True`.
+one epoch, a 2e-4 learning rate, 50 warmup steps, evaluation/checkpointing every
+200 steps and at most two retained checkpoints. The harness converts each
+three-message example to TRL's conversational `prompt` + `completion` format
+and uses `completion_only_loss=True`. This also works around Unsloth releases
+whose patched trainer does not recognize a standalone `messages` column.
 See the official [TRL SFTTrainer documentation](https://huggingface.co/docs/trl/sft_trainer)
 and [Unsloth repository](https://github.com/unslothai/unsloth) if their APIs or
 Colab installation instructions change.

@@ -83,10 +83,19 @@ function sleep(ms) {
 async function startDaemon(gameId, spectate) {
   if (await daemonAlive()) {
     const run = readRunFile();
-    if (run.gameId === gameId) return { reused: true, run };
-    throw new Error(
-      `A daemon is already connected to game ${run.gameId}. Run "um leave" or "um stop" first.`
-    );
+    if (run.gameId === gameId) {
+      // A daemon that was superseded (the same account opened the game in a
+      // browser, say) deliberately stops reconnecting. Rejoining is the
+      // signal to take the seat back, so restart it rather than reuse it.
+      const health = await daemonFetch("/health").catch(() => ({}));
+      if (!health.superseded) return { reused: true, run };
+      await daemonFetch("/stop", { method: "POST" }).catch(() => {});
+      for (let i = 0; i < 20 && (await daemonAlive()); i++) await sleep(250);
+    } else {
+      throw new Error(
+        `A daemon is already connected to game ${run.gameId}. Run "um leave" or "um stop" first.`
+      );
+    }
   }
   try {
     fs.unlinkSync(RUN_FILE);
@@ -155,6 +164,22 @@ function printResult(result) {
   if (result.digest) console.log(result.digest);
 }
 
+function formatMention(m) {
+  const where = m.meeting ? ` in {${m.meeting}}` : "";
+  let tag = ">>> MENTION";
+  if (m.type === "reply") tag = ">>> REPLY to your message";
+  else if (m.type === "quote") tag = ">>> QUOTE of your message";
+  else if (m.type === "whisper") tag = ">>> WHISPER to you";
+  else if (m.type === "role") tag = ">>> ROLE MENTION";
+  else if (m.isFaction) tag = ">>> FACTION CHAT";
+
+  const lines = [`${tag} from ${m.from}${where}: ${m.content}`];
+  if (m.replyTo) {
+    lines.push(`    (in response to: "${String(m.replyTo).slice(0, 60)}")`);
+  }
+  return lines.join("\n");
+}
+
 const USAGE = `
 um — UltiMafia client
 
@@ -177,7 +202,7 @@ Playing (daemon-backed):
                                   you lost the race and landed as a spectator)
   um join <gameId>                Join as a PLAYER and hold the connection open
   um spectate <gameId>            Connect to a full/in-progress game as a spectator
-  um state [--chat N]             The full briefing — read this before acting
+  um state [--full] [--chat N]    Game briefing (compact by default; --full for encyclopedic)
   um wait [--timeout ms]          Block until the phase changes OR someone mentions you
   um alarm [--timeout ms]         Like wait, but for run_in_background: exits on phase
                                   change so you get a completion notification.
@@ -185,7 +210,9 @@ Playing (daemon-backed):
   um mentions                     Recent messages that mentioned you
   um raw                          Same data as JSON
   um watch [--since N]            Raw event log from index N
-  um say "<text>" [--meeting M]
+  um say "<text>" [--meeting M]   Send regular chat to a meeting
+  um whisper <player> "<text>"    Send a private whisper to a player (if whispers enabled)
+  um cry "<text>"                 Broadcast anonymous message (Town Crier)
   um vote <target> [--meeting M]  Target = player name, "no one", "Yes"/"No", role name
   um unvote [--meeting M]
   um will "<text>"                Set your last will
@@ -391,9 +418,14 @@ async function main() {
       return;
     }
 
-    case "state":
-      printResult(await daemonFetch(`/state?chat=${Number(flags.chat) || 40}`));
+    case "state": {
+      const params = new URLSearchParams();
+      if (flags.full) params.set("full", "true");
+      if (flags.chat) params.set("chat", String(flags.chat));
+      const qs = params.toString() ? `?${params.toString()}` : "";
+      printResult(await daemonFetch(`/state${qs}`));
       return;
+    }
 
     case "raw":
       console.log(JSON.stringify(await daemonFetch("/raw"), null, 2));
@@ -423,13 +455,15 @@ async function main() {
           : `--- woke on "${result.firedOn}" — phase ${result.phase} ---`
       );
       for (const m of result.newMentions || []) {
-        console.log(
-          `>>> MENTION from ${m.from}${m.meeting ? ` in {${m.meeting}}` : ""}: ${m.content}`
-        );
+        console.log(formatMention(m));
       }
       if (result.digest) console.log(result.digest);
       if (!flags.quiet) {
-        printResult(await daemonFetch(`/state?chat=${Number(flags.chat) || 40}`));
+        const params = new URLSearchParams();
+        if (flags.full) params.set("full", "true");
+        if (flags.chat) params.set("chat", String(flags.chat));
+        const qs = params.toString() ? `?${params.toString()}` : "";
+        printResult(await daemonFetch(`/state${qs}`));
       }
       return;
     }
@@ -450,10 +484,10 @@ async function main() {
           // wait overshoots our own deadline.
           const chunk = Math.max(1000, Math.min(60000, deadline - Date.now()));
           const result = await daemonFetch(
-            `/wait?events=${encodeURIComponent(events)}&timeout=${chunk}`
+            `/wait?events=${encodeURIComponent(events)}&timeout=${chunk}&consume=false`
           );
           for (const m of result.newMentions || []) {
-            console.log(`>>> MENTION from ${m.from}: ${m.content}`);
+            console.log(formatMention(m));
           }
           if (!result.timedOut) {
             console.log(
@@ -480,9 +514,7 @@ async function main() {
       if (!data.mentions?.length) console.log("(no mentions yet)");
       for (const m of data.mentions) {
         console.log(
-          `[${new Date(m.time).toLocaleTimeString()}] ${m.from}${
-            m.meeting ? ` in {${m.meeting}}` : ""
-          }: ${m.content}`
+          `[${new Date(m.time).toLocaleTimeString()}] ${formatMention(m)}`
         );
       }
       return;
@@ -502,6 +534,44 @@ async function main() {
             meeting: flags.meeting,
             text: positional.join(" "),
             split: Boolean(flags.split),
+            ability: flags.ability,
+            abilityTarget: flags.target || flags.to,
+          },
+        })
+      );
+      return;
+
+    case "whisper": {
+      const target = positional[0];
+      const text = positional.slice(1).join(" ");
+      if (!target || !text) {
+        throw new Error('usage: um whisper <player> "<text>" [--meeting M]');
+      }
+      printResult(
+        await daemonFetch("/say", {
+          method: "POST",
+          body: {
+            meeting: flags.meeting || "Village",
+            text,
+            split: Boolean(flags.split),
+            ability: "Whisper",
+            abilityTarget: target,
+          },
+        })
+      );
+      return;
+    }
+
+    case "cry":
+      printResult(
+        await daemonFetch("/say", {
+          method: "POST",
+          body: {
+            meeting: flags.meeting || "Village",
+            text: positional.join(" "),
+            split: Boolean(flags.split),
+            ability: "Cry",
+            abilityTarget: "out",
           },
         })
       );

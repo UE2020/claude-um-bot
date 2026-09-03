@@ -49,7 +49,11 @@ export class GameState {
   get phaseLabel() {
     const name = this.stateInfo?.name || "?";
     const day = this.stateInfo?.dayCount;
-    if (day && name !== "Pregame" && name !== "Postgame") return `${name} ${day}`;
+    // The server sometimes sends the name already numbered ("Night 1"); do
+    // not turn that into "Night 1 1".
+    if (day && name !== "Pregame" && name !== "Postgame" && !/\d\s*$/.test(name)) {
+      return `${name} ${day}`;
+    }
     return name;
   }
 

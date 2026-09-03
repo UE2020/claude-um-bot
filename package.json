@@ -3,8 +3,11 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "node test/resolve.test.mjs",
-    "um": "node src/cli.js"
+    "test": "node test/resolve.test.mjs && node test/agent.test.mjs && node test/training-reports.test.mjs",
+    "um": "node src/cli.js",
+    "agent": "node src/agent.js",
+    "dataset": "node scripts/build-dataset.mjs --out data/train-full.jsonl && node scripts/sample-dataset.mjs --in data/train-full.jsonl --train data/train.jsonl --eval data/eval.jsonl --max-train 30000",
+    "privacy-check": "node scripts/privacy-check.mjs"
   },
   "keywords": [],
   "author": "",

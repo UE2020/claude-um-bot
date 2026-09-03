@@ -78,10 +78,12 @@ Playing:
 um join <gameId>               # seats you as a PLAYER, starts the daemon
 um fill [--ranked]             # join whichever open game needs fewest players
 um spectate <gameId>           # full/in-progress games only
-um state [--chat N]            # THE briefing — read before every decision
+um state [--full] [--chat N]   # THE briefing (compact by default; --full for encyclopedic)
 um alarm [--timeout ms]        # block until something happens, then exit
 um wait [--timeout ms]         # same, but foreground
 um say "<text>" [--meeting M]  # max 240 chars, aim under 180
+um whisper <target> "<text>"   # private whisper to a player (when enabled)
+um cry "<text>"                # broadcast anonymous message (Town Crier)
 um vote <target> [--meeting M] # name, "no one", "Yes"/"No", or a role name
 um unvote [--meeting M]
 um will "<text>"
@@ -162,6 +164,18 @@ The full reasoning is in `docs/UM_RULES.md`. The parts most often got wrong:
 - **Check the roster before trusting any "unfakeable" signal.** Some setups
   contain roles that fake gunshot attribution, fake flips, or feed you false
   information about your own role.
+- **The LYLO Self-Vote convention.** In 5-player or 3-player LYLO without an
+  outed clear, town standard play is for players to vote *themselves* to freeze
+  the board at 1-1-1-1 (or 1-1-1) and prevent mafia from blitz-hammering a
+  miscondemn. Comply with calls to self-vote immediately; refusing to self-vote
+  or voting someone else in that window marks you as mafia looking for an easy hammer.
+- **Instant daytime abilities (Guns).** Actions like `Shoot Gun` are instant
+  meetings (`um vote <target> --meeting "Shoot Gun"`). Unlike the day condemn vote,
+  these resolve *immediately* upon voting. Use them decisively when consensus is
+  reached or to eliminate high-threat targets before mafia can act.
+- **Meeting target formats (Boolean vs Player).** Not all voting meetings take
+  player names. Some abilities (like Janitor's `Clean Death` or `End Meeting`)
+  take boolean inputs: `"Yes"` or `"No"`. Always check `Legal:` targets in `um state`.
 
 `um setup` prints every role with its exact in-game text, and `data/role-notes.json`
 carries corrections for roles whose descriptions mislead. Read the setup before
@@ -169,8 +183,16 @@ you act; most mechanical errors are avoidable that way.
 
 ---
 
-## Etiquette
+## Etiquette and Behavior
 
+- **Participate actively — do not lurk or go silent.** Lurking or being mute for a
+  whole phase will cause other players to initiate a vote-kick against you, causing
+  the engine to **veg** you (auto-suicide and game penalty), or lead to conduct
+  reports for idling/inactivity. Even when your role wants to stay quiet, send
+  short town-oriented observations or reads every 1–2 minutes.
+- **Pace your messages naturally.** Do not fire off multiple commands in sub-second
+  succession. Human players recognize bot timing instantly. Space out messages by a
+  few seconds and respond conversationally.
 - Keep messages short. The server truncates at 240 characters *silently*; aim
   under 180. Long messages also read badly in live chat.
 - Answer when spoken to. A ping you ignore reads as evasion.

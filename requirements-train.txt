@@ -1,0 +1,5 @@
+# Install these into a fresh Colab runtime. They are intentionally unpinned so
+# the installer can select builds compatible with Colab's current CUDA/PyTorch.
+unsloth
+datasets
+trl

@@ -108,6 +108,55 @@ request for the Bleeder to claim went out moments *after* they had already
 claimed. Now every action tells you what happened while you were deciding, so
 you never act on a stale board.
 
+## Running with a local model (Ollama)
+
+`src/agent.js` is a small harness that lets a locally served model play
+without an LLM harness such as Claude Code around it. It reads the daemon's
+briefing, asks the model for one JSON decision per turn, validates it against
+the legal targets, dispatches it, and blocks on the daemon's `/wait` until
+something happens. It was written for a 4B model on a CPU-only laptop, so
+every model call is stateless and small.
+
+```bash
+ollama pull qwen3.5:4b            # or whichever tag you installed
+node src/agent.js --bench         # measure prompt/generation speed first
+node src/cli.js join <gameId>     # start the daemon as usual
+node src/agent.js                 # attach the model; --dry-run to only watch
+```
+
+Useful flags: `--model`, `--chat N` (max chat lines per turn),
+`--tail-budget N` (max tokens in the part of the prompt that changes each
+turn), `--cadence ms` (how often it speaks unprompted during the day),
+`--say-gap ms`, `--num-ctx`, `--think` (enable the model's thinking mode; slow
+on CPU), `--dry-run`, `--verbose`. The system prompt lives in
+`prompts/local-agent.md` and is a distillation of `AGENTS.md`.
+
+Prompt size is the whole game on a CPU. Qwen3.5 is a hybrid recurrent model,
+so llama.cpp cannot resume from an arbitrary cached prefix: it only keeps
+checkpoints about 512 tokens before the end of the previous prompt. If the
+part of the prompt that changed since last turn is longer than that, the
+entire prompt is re-processed (about 60s for 1,400 tokens on a Ryzen 5 7520U)
+instead of just the tail (about 20s). The harness keeps the system prompt and
+role description byte-identical and trims chat lines until the changing tail
+fits `--tail-budget`; `--bench` reports whether the cache is being reused.
+
+What the code enforces regardless of the model: legal targets only, a 240
+character cap, no re-voting the current target, a minimum gap between its
+own speaking turns, a night action every night, and a refusal to send chat
+that quotes a system message word for word.
+
+When it wakes the model: on a phase change; on a mention, including
+abbreviations of its name (`JimmieBathsheba22` wakes on jimmy, jimm,
+bathsheba); on a system message reporting a gunshot, death or report; when a
+new vote lands on it; and otherwise every `--cadence` during the day. On the
+event-driven wakes a `wait` is refused once and the model is told why, so it
+answers pings and pushes instead of lurking. A turn may send up to
+`--max-lines` short lines separated by `|`, posted a few seconds apart.
+
+Expect a 4B model to play weakly and to be talked into things by other
+players. Use the Sandbox lobby and unranked games. Set `mentionPatterns` in
+`config.json` to the account's name so mentions wake it.
+
 ## Design notes
 
 **Everything is a meeting.** UM has no separate night-action API. The day vote,
@@ -145,6 +194,8 @@ src/mentions.js   detecting when someone is talking to you
 data/role-notes.json  corrections for roles whose descriptions mislead
 docs/UM_RULES.md  how UltiMafia actually works — read this
 docs/GLOSSARY.md  site jargon (blue, uncced, MYLO, OGI, GRS…)
+docs/TRAINING.md  private-data workflow and Colab fine-tuning harness
+training/train.py dataset validation, LoRA training, resume and GGUF export
 test/             offline tests: npm test
 ```
 

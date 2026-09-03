@@ -85,6 +85,7 @@ export class UMRest {
    * short-lived, so fetch it immediately before dialing the socket.
    */
   connectInfo(gameId, spectate = false) {
+    spectate = true;
     return this.get(`/game/${gameId}/connect${spectate ? "?spectate=true" : ""}`);
   }
 

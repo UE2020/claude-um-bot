@@ -59,7 +59,7 @@ Practical consequences, in order of how badly they bite:
 explicitly when the phase is one vote from resolving or when *you* are the
 current plurality leader. Read those lines every single time.
 
-## Hammering with clears
+## Hammering with clears and the LYLO Self-Vote convention
 
 When the game contains a **clear** (a player confirmed innocent to everyone —
 e.g. a flipped-and-confirmed cop's target, a revealed Mayor-type, a role that
@@ -75,6 +75,40 @@ proves itself), the standard endgame convention is:
 So if you are the clear: vote last, and your vote is the decision. If you are
 not the clear: put your vote where the hammer configuration needs it (normally
 on yourself) and say so out loud, so the clear can count.
+
+### The LYLO "Self-Vote" Freeze
+
+In **5-player or 3-player LYLO** where town has no living clear and needs time
+to talk, players frequently call for everyone to **vote themselves** immediately
+(`"SELF NOW"`). This ties the vote 1-1-1-1 (or 1-1-1) and guarantees that mafia
+cannot coordinate a blitz hammer on town while people are typing. Comply with
+self-vote calls promptly; hesitating, arguing, or parking your vote on another
+player in that window is treated as a near-universal scum tell.
+
+## Specific role mechanics that frequently trip up new players
+
+### Oracle: Posthumous reveal ONLY (NOT an active investigator)
+The Oracle visits a player every night, but **learns nothing while alive**. If
+the Oracle is killed at night or shot during the day, the server broadcasts the
+visited player's exact role publicly upon the Oracle's death (`X's role is Villager`).
+Do **not** expect or demand an Oracle report while the Oracle is living; they have
+no investigation results until they die.
+
+### Caroler: Visit requirement and Janitor fakes
+The Caroler selects a target at night. If the target did not take a night visit,
+they receive a Carol listing 3 names (one of which is guaranteed Mafia).
+Crucial interactions:
+- If the target visited someone (e.g. Cop, Hooker, Janitor, Mafioso making the
+  kill), **no Carol is received** ("no sing song").
+- If the real Caroler is killed and cleaned by a Janitor on N1, Mafia can
+  fabricate a fake Carol pool with no counterclaim.
+- Alternatively, a Mafia member can deliberately no-visit on N1 to receive the
+  genuine Carol and modify the 3 names to frame townies.
+
+### Instant Daytime Abilities (Guns)
+Abilities like Town Crier's or Vigilante's `Shoot Gun` are instant action meetings.
+Voting a target in `Shoot Gun` fires and resolves **on the spot**, generating an
+immediate gunshot report and role flip.
 
 ## Meetings — how every action is expressed
 
@@ -132,6 +166,24 @@ shayne (if the Cop's guilty was real) or RealPolitik (if he fake-claimed Cop
 and the real Cop had been janned). Two candidates, one miscondemn available →
 autowin. Condemn one, then the other. Instead of executing, I treated it as an
 unsolved 50/50 between shayne and Birbtales and burned most of the day.
+
+### Nightkill Traps: NEVER kill Oracle going into F3 or when you are the last Mafia
+
+**The General Rule: NEVER nightkill the Oracle going into F3, or anytime you are the last living Mafia.**
+
+Why killing the Oracle is fatal:
+1. **The Instant Outing (Oracle targets you)**: If the Oracle visited *you* at night and you kill them, the server broadcasts your exact Mafia role (`X's role is Hooker/Mafioso`) on daybreak. The game ends instantly.
+2. **The Autoloss Double-Clear**: If the Oracle visited a townie, their death broadcasts that townie as 100% confirmed clear. If the other townie is a self-proving role like Town Crier, town now has **two clears and zero suspects** — an absolute autoloss.
+
+**Why killing the non-Oracle unclear (lucky) is ALSO autoloss:**
+- If you kill the vanilla townie (`lucky`), you leave the uncced **Oracle** (`JM123`) AND the self-proving **Town Crier** (`CarlHeinz36`) both alive. Since both are confirmed clears, town still has two clears in F3 and you lose automatically.
+
+**The ONLY winning line: Kill the self-proving role (Carl the Crier), leave Oracle alive, and deathtunnel the remaining unclear (lucky):**
+- By killing `CarlHeinz36` (the Town Crier), you remove the self-proving role.
+- By leaving `JM123` (Oracle) alive, Oracle gets **no death reveal**. Oracle is the single living clear holding the hammer.
+- You enter F3 with `JM123` deciding between **you** and **`lucky`**.
+- Because `lucky` was in the Carol pool and under heavy suspicion all game, you deathtunnel `lucky` in front of `JM123` to win the 50/50.
+
 
 ## When a no-condemn (NL) is actually correct
 

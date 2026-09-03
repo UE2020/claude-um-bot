@@ -283,7 +283,8 @@ export function renderState(state, knowledge, opts = {}) {
     const meetingName = state.meetings[m.meetingId]?.name;
     const where = meetingName ? `{${meetingName}} ` : "";
     const who = m.senderId === "server" ? "***" : state.playerName(m.senderId);
-    out.push(`  [${fmtClock(m.time)}] ${where}${who}: ${m.content}`);
+    const prefixStr = m.prefix ? ` (${m.prefix})` : "";
+    out.push(`  [${fmtClock(m.time)}] ${where}${who}${prefixStr}: ${m.content}`);
   }
 
   // --- what you can do ----------------------------------------------------
@@ -299,6 +300,9 @@ export function renderState(state, knowledge, opts = {}) {
   }
   for (const m of speakable) {
     out.push(`  um say "<text>" --meeting "${m.name}"`);
+    if (state.self?.role?.name === "Town Crier" || state.selfRole?.name === "Town Crier" || (m.speechAbilities && m.speechAbilities.some((a) => a.name === "Cry"))) {
+      out.push(`  um cry "<text>"                            # Broadcast anonymous message (Town Crier)`);
+    }
   }
 
   if (state.errors.length) {
@@ -309,6 +313,203 @@ export function renderState(state, knowledge, opts = {}) {
   if (state.unknownEvents.size) {
     out.push(`\n(unhandled socket events seen: ${[...state.unknownEvents].join(", ")})`);
   }
+
+  return out.join("\n");
+}
+
+export function calculateParity(state, knowledge) {
+  if (!state || !state.players) return null;
+  const dead = state.deadMap ? state.deadMap() : {};
+  const seated = Object.values(state.players).filter((p) => !p.left);
+  const alive = seated.filter((p) => !dead[p.id]);
+  const aliveCount = alive.length;
+  if (aliveCount === 0) return null;
+
+  const counts = knowledge?.alignmentCounts && state.setup ? knowledge.alignmentCounts(state.setup) : {};
+  const totalMafia = (counts["Mafia"] || 0) + (counts["Cult"] || 0) + (counts["Werewolf"] || 0);
+
+  const known = state.knownRoles ? state.knownRoles() : {};
+  let deadMafia = 0;
+  for (const p of seated) {
+    if (dead[p.id] && known[p.id]) {
+      const { role } = Knowledge.splitAppearance(known[p.id]);
+      const info = knowledge?.role ? knowledge.role(role) : null;
+      if (info && (info.alignment === "Mafia" || info.alignment === "Cult" || info.alignment === "Werewolf")) {
+        deadMafia++;
+      }
+    }
+  }
+
+  const estimatedAliveMafia = Math.max(1, totalMafia - deadMafia);
+  const miscondemns = Math.max(0, Math.floor((aliveCount - 2 * estimatedAliveMafia) / 2));
+
+  let status = null;
+  let warning = null;
+  if (miscondemns === 0 && aliveCount > 2) {
+    status = "LYLO (Lynch or Lose)";
+    warning = "!! LYLO: Miscondemn loses the game. Plurality vote on Town = defeat. DO NOT NO-CONDEMN.";
+  } else if (miscondemns === 1 && aliveCount % 2 === 0) {
+    status = "MYLO (Mislynch and Lose)";
+    warning = "!! MYLO: Miscondemn loses tomorrow. A no-condemn keeps parity.";
+  } else {
+    status = `${miscondemns} miscondemn${miscondemns === 1 ? "" : "s"} budget`;
+  }
+
+  return {
+    aliveCount,
+    totalSeated: seated.length,
+    estimatedAliveMafia,
+    miscondemns,
+    status,
+    warning,
+  };
+}
+
+export function renderCompactState(state, knowledge, opts = {}) {
+  const chatLimit = opts.chatLimit ?? 10;
+  const out = [];
+  const known = state.knownRoles();
+  const dead = state.deadMap();
+  const timer = state.primaryTimer();
+  const parity = calculateParity(state, knowledge);
+
+  // --- Header ---
+  const timerStr = timer?.left != null ? ` (${fmtDuration(timer.left)} left)` : "";
+  const parityStr = parity?.status ? ` | Parity: ${parity.status}` : "";
+  const seated = Object.values(state.players).filter((p) => !p.left);
+  const aliveCount = seated.filter((p) => !dead[p.id]).length;
+
+  out.push(`════ UltiMafia · Game ${state.gameId} [COMPACT] ════`);
+  out.push(`Phase: ${state.phaseLabel}${timerStr} | Alive: ${aliveCount}/${seated.length}${parityStr}`);
+
+  if (state.selfId && dead[state.selfId]) {
+    out.push(`!! YOU ARE DEAD (graveyard chat only — living cannot hear you).`);
+  }
+  if (state.isSpectator) {
+    out.push(`!! YOU ARE A SPECTATOR (observer only).`);
+  }
+  if (parity?.warning) {
+    out.push(parity.warning);
+  }
+  if (!state.started) out.push(`Status: PREGAME — waiting to fill.`);
+  if (state.finished) out.push(`Status: GAME OVER${state.winners ? ` — Winners: ${JSON.stringify(state.winners)}` : ""}`);
+
+  // --- Me ---
+  const me = state.self;
+  const myAppearance = state.selfId ? known[state.selfId] : null;
+  const inv = me?.inventory?.length
+    ? ` | Items: ${me.inventory.map((i) => `${i.name}${i.hasAction ? "(action)" : ""}`).join(", ")}`
+    : "";
+  const will = state.lastWill ? ` | Will: "${state.lastWill}"` : "";
+  out.push(`YOU: ${me?.name || "(unknown)"} (id=${state.selfId || "?"}) | Role: ${myAppearance || (state.started ? "(unrevealed)" : "Pregame")}${inv}${will}`);
+
+  // Teammates / known roles (compact 1-liner if any)
+  const teammates = Object.entries(known).filter(([pid]) => pid !== state.selfId && state.players[pid]);
+  if (teammates.length) {
+    out.push(`Known roles: ${teammates.map(([pid, app]) => `${state.playerName(pid)}=${app}`).join(", ")}`);
+  }
+
+  // --- Players (compact inline) ---
+  const alivePlayers = seated.filter((p) => !dead[p.id]);
+  const deadPlayers = seated.filter((p) => dead[p.id]);
+
+  const aliveStrs = alivePlayers.map((p) => {
+    const role = known[p.id] ? ` (${known[p.id]})` : "";
+    const meMarker = p.id === state.selfId ? " [YOU]" : "";
+    return `${p.name}${role}${meMarker}`;
+  });
+  out.push(`Alive (${alivePlayers.length}): ${aliveStrs.join(", ") || "(none)"}`);
+
+  if (deadPlayers.length) {
+    const deadStrs = deadPlayers.map((p) => {
+      const role = known[p.id] ? ` (${known[p.id]})` : "";
+      return `${p.name}${role}`;
+    });
+    out.push(`Dead (${deadPlayers.length}): ${deadStrs.join(", ")}`);
+  }
+
+  // --- Votes & Meetings ---
+  const votable = state.votableMeetings();
+  if (votable.length) {
+    out.push(`\n── VOTES ──────────────────────────────────────────`);
+    for (const m of votable) {
+      const votes = m.votes || {};
+      const entries = Object.entries(votes);
+      const totalVoters = (m.members || []).filter((x) => x.canVote).length;
+      const tally = {};
+      for (const [, target] of entries) {
+        for (const t of Array.isArray(target) ? target : [target]) {
+          tally[t] = (tally[t] || 0) + 1;
+        }
+      }
+      const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+      const tallyStr = sorted.map(([t, c]) => `${state.targetLabel(t, m)}=${c}`).join(", ") || "(none)";
+      const myVote = votes[state.selfId] !== undefined ? state.targetLabel(votes[state.selfId], m) : "(not cast)";
+      const tied = sorted.length > 1 && sorted[0][1] === sorted[1][1];
+
+      out.push(`* "${m.name}": ${tallyStr} | cast ${entries.length}/${totalVoters}${tied ? " (tied)" : ""} | yours: ${myVote}`);
+
+      if (totalVoters && entries.length >= totalVoters - 1 && !tied) {
+        out.push(`  !! Phase can END INSTANTLY on next vote`);
+      }
+      if (sorted.length && sorted[0][0] === state.selfId && !tied) {
+        out.push(`  !! YOU ARE PLURALITY LEADER — consider "um unvote"`);
+      }
+    }
+  }
+
+  // --- System messages / Reports (current phase or last 6) ---
+  const sys = state.systemMessages();
+  const currentPhaseReports = sys.filter((m) => m.stateId === state.currentStateId);
+  const reportsToShow = currentPhaseReports.length > 0 ? currentPhaseReports : sys.slice(-6);
+  if (reportsToShow.length) {
+    out.push(`\n── REPORTS (${reportsToShow.length} in ${state.phaseLabel}) ────────────`);
+    for (const m of reportsToShow) {
+      out.push(`  [${fmtClock(m.time)}] ${m.content}`);
+    }
+  }
+
+  // --- Chat (Delta by default, or explicit slice) ---
+  const all = state.allMessages();
+  let chat;
+  let chatLabel;
+
+  if (opts.messages) {
+    chat = opts.messages;
+    chatLabel = opts.chatLabel || `${chat.length} messages`;
+  } else if (opts.sinceIndex != null) {
+    chat = all.slice(opts.sinceIndex);
+    chatLabel = opts.sinceIndex === 0
+      ? `first look — recent ${chat.length}`
+      : `${chat.length} new since last look`;
+  } else if (opts.chatLimit != null) {
+    chat = all.slice(-opts.chatLimit);
+    chatLabel = `last ${chat.length}`;
+  } else {
+    chat = all.slice(-20);
+    chatLabel = `last ${chat.length}`;
+  }
+
+  out.push(`\n── CHAT (${chatLabel}) ──────────────────────────`);
+  if (!chat.length) {
+    out.push("  (no new messages)");
+  }
+  for (const m of chat) {
+    const meetingName = state.meetings[m.meetingId]?.name;
+    const where = meetingName ? `{${meetingName}} ` : "";
+    const who = m.senderId === "server" ? "***" : state.playerName(m.senderId);
+    const prefixStr = m.prefix ? ` (${m.prefix})` : "";
+    out.push(`  [${fmtClock(m.time)}] ${where}${who}${prefixStr}: ${m.content}`);
+  }
+
+  // --- Quick Actions Hint ---
+  out.push(`\n── ACTIONS ────────────────────────────────────────`);
+  const speakable = state.speakableMeetings();
+  const acts = [];
+  for (const m of votable) acts.push(`um vote <target> --meeting "${m.name}"`);
+  for (const m of speakable) acts.push(`um say "<text>" --meeting "${m.name}"`);
+  acts.push(`um alarm (wait) | um state --full (detailed rules)`);
+  out.push(`  ${acts.join(" | ")}`);
 
   return out.join("\n");
 }

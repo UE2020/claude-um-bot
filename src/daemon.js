@@ -13,9 +13,17 @@ import WebSocket from "ws";
 import { UMRest, loadConfig } from "./rest.js";
 import { Knowledge } from "./knowledge.js";
 import { GameState } from "./state.js";
-import { renderState } from "./render.js";
+import { renderState, renderCompactState } from "./render.js";
 import { stringifyMessage, parseMessage } from "./wire.js";
-import { buildMentionRegex, isMention } from "./mentions.js";
+import {
+  buildMentionRegex,
+  buildRolePatterns,
+  classifyIncomingMessage,
+  isMention,
+  isFactionMessage,
+  isHostile,
+  classifySystemMessage,
+} from "./mentions.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const RUN_DIR = path.join(ROOT, "run");
@@ -65,6 +73,8 @@ class Daemon {
     this.pendingAlerts = [];
     this.mentions = []; // ring buffer of recent @-mentions
     this.mentionRegex = buildMentionRegex(this.config);
+    this.lastSpokeByMeeting = {};
+    this.messagesSinceLastSpoke = {};
   }
 
   async start() {
@@ -141,7 +151,25 @@ class Daemon {
 
     this.state.apply(eventName, data);
     this.notifyWaiters(eventName);
-    if (eventName === "message") this.checkMention(data);
+
+    if (eventName === "message" || eventName === "quote") {
+      if (data && data.senderId === this.state.selfId) {
+        this.lastSpokeByMeeting[data.meetingId] = {
+          time: data.time || Date.now(),
+          content: data.content,
+          id: data.id,
+          senderId: data.senderId,
+        };
+        this.messagesSinceLastSpoke[data.meetingId] = 0;
+      }
+      this.checkMention(data);
+    } else if (eventName === "start") {
+      this.state.started = true;
+      this.notifyWaiters("state");
+    } else if (eventName === "winners") {
+      this.state.winners = data;
+      this.notifyWaiters("finished");
+    }
 
     if (eventName === "connected") {
       if (info.token) this.send("auth", info.token);
@@ -226,20 +254,84 @@ class Daemon {
    * "mention" event that `um wait` can block on.
    */
   checkMention(data) {
-    if (!isMention(data, { regex: this.mentionRegex, selfId: this.state.selfId })) {
+    if (!data) return;
+
+    // Server lines never "address" anyone, but a gunshot, a death or a report
+    // is exactly what an agent must react to at once rather than on its next
+    // scheduled look. Surface them through the same mention channel.
+    if (data.senderId === "server") {
+      const kind = classifySystemMessage(data.content);
+      if (!kind) return;
+      const mention = {
+        time: data.time || Date.now(),
+        from: "SYSTEM",
+        meeting: this.state.meetings[data.meetingId]?.name || null,
+        content: data.content,
+        type: "system",
+        kind,
+        reason: `System message: ${kind}`,
+        replyTo: null,
+        isFaction: false,
+        hostile: false,
+      };
+      this.mentions.push(mention);
+      if (this.mentions.length > 50) this.mentions.shift();
+      logLine(`[system:${kind}] ${mention.content}`);
+      this.notifyWaiters("mention");
       return;
     }
 
+    const selfName = this.state.self?.name || null;
+    const mentionRegex = buildMentionRegex(this.config, selfName);
+    const myRoleName = this.state.selfId ? this.state.knownRoles()[this.state.selfId] : null;
+    const rolePatterns = myRoleName ? buildRolePatterns(myRoleName) : [];
+    const roleRegex = rolePatterns.length ? new RegExp(rolePatterns.join("|"), "i") : null;
+
+    const meeting = this.state.meetings[data.meetingId];
+    const memberCount = meeting?.members?.length || 10;
+    const lastSpoke = this.lastSpokeByMeeting[data.meetingId] || null;
+    const messagesSinceSpoke = this.messagesSinceLastSpoke[data.meetingId] || 0;
+
+    const classification = classifyIncomingMessage(data, {
+      regex: mentionRegex,
+      roleRegex,
+      selfId: this.state.selfId,
+      selfName,
+      lastSpoke,
+      messagesSinceSpoke,
+      memberCount,
+      meetings: this.state.meetings,
+      getMessage: (id) => this.state.messages.get(id),
+    });
+
+    if (data.senderId !== this.state.selfId && data.senderId !== "server") {
+      this.messagesSinceLastSpoke[data.meetingId] = messagesSinceSpoke + 1;
+    }
+
+    if (!classification.isAddressed) {
+      return;
+    }
+
+    const meetingName = meeting?.name || null;
     const mention = {
       time: data.time || Date.now(),
       from: this.state.playerName(data.senderId),
-      meeting: this.state.meetings[data.meetingId]?.name || null,
+      meeting: meetingName,
       content: data.content,
+      type: classification.type,
+      reason: classification.reason,
+      replyTo: classification.replyTo || null,
+      isFaction: classification.type === "faction",
+      hostile: classification.type !== "faction" && isHostile(data.content),
     };
     this.mentions.push(mention);
     if (this.mentions.length > 50) this.mentions.shift();
 
-    logLine(`mention from ${mention.from}: ${mention.content}`);
+    const tag = classification.type === "faction"
+      ? `[${meetingName}]`
+      : `[${classification.type || "mention"}]`;
+    const replyNote = mention.replyTo ? ` (re: "${String(mention.replyTo).slice(0, 40)}")` : "";
+    logLine(`${tag} from ${mention.from}${meetingName ? ` in {${meetingName}}` : ""}: ${mention.content}${replyNote}`);
     this.notifyWaiters("mention");
   }
 
@@ -334,7 +426,7 @@ class Daemon {
     return { ok: true, message: `Unvoted in "${meeting.name}".` };
   }
 
-  doSay({ meeting: meetingHint, text, split }) {
+  doSay({ meeting: meetingHint, text, split, ability, abilityTarget }) {
     const { meeting, error } = this.state.resolveMeeting(
       meetingHint,
       this.state.speakableMeetings()
@@ -358,20 +450,37 @@ class Daemon {
       };
     }
 
+    const payloadBase = {};
+    if (ability) payloadBase.abilityName = ability;
+    if (abilityTarget) payloadBase.abilityTarget = abilityTarget;
+
     const parts = split ? chunkMessage(content, MAX_MESSAGE_LENGTH) : [content];
     for (const part of parts) {
       // Outbound chat is "speak"; "message" is the server->client direction.
-      const sent = this.send("speak", { meetingId: meeting.id, content: part });
+      const sent = this.send("speak", {
+        meetingId: meeting.id,
+        content: part,
+        ...payloadBase,
+      });
       if (!sent) return { ok: false, error: "Socket not connected." };
     }
+
+    this.lastSpokeByMeeting[meeting.id] = {
+      time: Date.now(),
+      content,
+      id: "sent",
+      senderId: this.state.selfId,
+    };
+    this.messagesSinceLastSpoke[meeting.id] = 0;
 
     const warn =
       parts.length === 1 && content.length > SOFT_MESSAGE_LENGTH
         ? ` (note: ${content.length} chars — long for live chat, aim under ${SOFT_MESSAGE_LENGTH})`
         : "";
+    const abilityNote = ability ? ` (using "${ability}")` : "";
     return {
       ok: true,
-      message: `Sent to "${meeting.name}"${parts.length > 1 ? ` in ${parts.length} parts` : ""}: ${text}${warn}`,
+      message: `Sent to "${meeting.name}"${parts.length > 1 ? ` in ${parts.length} parts` : ""}${abilityNote}: ${text}${warn}`,
     };
   }
 
@@ -454,21 +563,42 @@ class Daemon {
                 banner =
                   "!! SOCKET NOT CONNECTED — reconnecting. State below may be stale.\n\n";
               }
-              this.buildDigest();
-              return reply(
-                200,
-                banner +
-                  renderState(this.state, this.knowledge, {
-                    chatLimit: Number(url.searchParams.get("chat")) || 40,
-                  })
-              );
+              const all = this.state.allMessages();
+              const seen = this.lastSeenMessageCount ?? 0;
+              const isFull = url.searchParams.get("full") === "true";
+              const explicitChat = url.searchParams.has("chat")
+                ? Number(url.searchParams.get("chat"))
+                : null;
+
+              let rendered;
+              if (isFull) {
+                const chatLimit = explicitChat ?? 40;
+                rendered = renderState(this.state, this.knowledge, { chatLimit });
+              } else if (explicitChat != null) {
+                rendered = renderCompactState(this.state, this.knowledge, {
+                  chatLimit: explicitChat,
+                });
+              } else {
+                // True Delta Mode: show exactly the messages that arrived since last check!
+                // On the very first look, show recent messages (up to 20) so the agent has context.
+                const deltaMessages = seen === 0 ? all.slice(-20) : all.slice(seen);
+                const chatLabel = seen === 0
+                  ? `first look — recent ${deltaMessages.length}`
+                  : `${deltaMessages.length} new since last check`;
+                rendered = renderCompactState(this.state, this.knowledge, {
+                  messages: deltaMessages,
+                  chatLabel,
+                });
+              }
+
+              this.lastSeenMessageCount = all.length;
+              return reply(200, banner + rendered);
             }
 
             case "GET /raw":
               return reply(200, {
                 isSpectator: this.state.isSpectator,
                 selfId: this.state.selfId,
-                isSpectator: this.state.isSpectator,
                 phase: this.state.phaseLabel,
                 stateInfo: this.state.stateInfo,
                 players: this.state.players,
@@ -518,13 +648,17 @@ class Daemon {
               const before = this.mentions.length;
               const fired = await this.waitForEvent(events, timeoutMs);
               this.lastSeenMentionCount = this.mentions.length;
+              const timedOut = fired === null;
+              // If timedOut, do NOT consume the digest messages so they are preserved
+              // until an actual event wakes the agent
+              const consume = url.searchParams.get("consume") !== "false" && !timedOut;
               return reply(200, {
                 ok: true,
                 firedOn: fired,
-                timedOut: fired === null,
+                timedOut,
                 phase: this.state.phaseLabel,
                 newMentions: this.mentions.slice(before),
-                digest: this.buildDigest(),
+                digest: this.buildDigest({ consume }),
               });
             }
 

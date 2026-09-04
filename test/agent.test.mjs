@@ -9,6 +9,8 @@ import {
   quotesSystemMessage,
   sanitiseChat,
   parseDecision,
+  cryableMeetings,
+  speechRequestBody,
   timeLeft,
 } from "../src/agent.js";
 
@@ -67,6 +69,17 @@ test("legal actions falls back to wait when nothing is actionable", () => {
   assert.match(legalActionsBlock(raw), /use wait/);
 });
 
+test("Cry is listed only where the player has the anonymous speech ability", () => {
+  const raw = fixture();
+  raw.meetings.m1.speechAbilities = [
+    { name: "Cry", targets: ["out"], targetType: "out" },
+  ];
+  const block = legalActionsBlock(raw);
+  assert.match(block, /CRY "Village" \(anonymous broadcast\)/);
+  assert.doesNotMatch(block, /CRY "Mafia"/);
+  assert.deepEqual(cryableMeetings(raw).map((m) => m.name), ["Village"]);
+});
+
 test("say defaults to the Village meeting when the model leaves it blank", () => {
   const v = validateDecision({ action: "say", text: "leaning carol" }, fixture());
   assert.equal(v.ok, true);
@@ -78,6 +91,30 @@ test("say resolves a partial meeting name", () => {
   const v = validateDecision({ action: "say", meeting: "maf", text: "kill alice?" }, fixture());
   assert.equal(v.ok, true);
   assert.equal(v.meeting, "Mafia");
+});
+
+test("cry requires a listed Cry ability and dispatches it anonymously", () => {
+  const raw = fixture();
+  const unavailable = validateDecision({ action: "cry", text: "test" }, raw);
+  assert.equal(unavailable.ok, false);
+
+  raw.meetings.m1.speechAbilities = [
+    { name: "Cry", targets: ["out"], targetType: "out" },
+  ];
+  const v = validateDecision({ action: "cry", text: "still watching" }, raw);
+  assert.deepEqual(v, {
+    ok: true,
+    action: "cry",
+    meeting: "Village",
+    text: "still watching",
+    texts: ["still watching"],
+  });
+  assert.deepEqual(speechRequestBody(v.action, v.meeting, v.text), {
+    meeting: "Village",
+    text: "still watching",
+    ability: "Cry",
+    abilityTarget: "out",
+  });
 });
 
 test("say strips markdown and caps an unbreakable line at 240 characters", () => {

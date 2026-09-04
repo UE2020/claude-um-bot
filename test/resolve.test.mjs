@@ -572,6 +572,28 @@ console.log("\ncompact state rendering and parity calculation");
     assert.ok(res.includes("── CHAT (0 new since last check) ──────────────────────────"));
     assert.ok(res.includes("(no new messages)"));
   });
+
+  test("archive Cry messages never reveal their real sender", () => {
+    const s = makeState();
+    const mockKnowledge = { alignmentCounts: () => ({}), role: () => null };
+    s.meetings.m1.speechAbilities = [
+      { name: "Cry", targets: ["out"], targetType: "out" },
+    ];
+    s.addMessage({
+      id: "cry-1",
+      senderId: "a",
+      content: "remember the claim order",
+      prefix: "cries out",
+      meetingId: "day",
+      time: 1000,
+    });
+    const stored = s.messages.get("cry-1");
+    assert.equal(stored.senderId, "anonymous");
+    const res = renderCompactState(s, mockKnowledge, { chatLimit: 10 });
+    assert.ok(res.includes("Anonymous (cries out): remember the claim order"));
+    assert.ok(!res.includes("Alice (cries out)"));
+    assert.ok(res.includes('um cry "<text>" --meeting "Village"'));
+  });
 }
 
 console.log(`\n${passed} passed`);

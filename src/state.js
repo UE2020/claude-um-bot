@@ -4,6 +4,8 @@
 // over events. Anything not understood is still recorded in the event log,
 // so nothing is silently lost.
 
+import { withVisibleSender } from "./messages.js";
+
 export class GameState {
   constructor(gameId) {
     this.gameId = gameId;
@@ -506,6 +508,11 @@ export class GameState {
 
   addMessage(message) {
     if (!message) return;
+
+    // Review archives retain the true sender id of anonymous speech abilities
+    // such as Town Crier's Cry. Live recipients see senderId="anonymous".
+    // Normalize both paths here so reconnect history cannot reveal the actor.
+    message = withVisibleSender(message);
 
     // Quotes reference an earlier message by id instead of carrying content,
     // so resolve the original rather than rendering `undefined`.

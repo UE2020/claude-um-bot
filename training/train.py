@@ -20,7 +20,11 @@ from pathlib import Path
 from typing import Any
 
 
-ALLOWED_ACTIONS = {"say", "vote", "unvote", "wait"}
+ALLOWED_ACTIONS = {"say", "cry", "vote", "unvote", "wait"}
+DISPLAYED_CRY_PATTERN = re.compile(
+    r'^\s*\[[^\]]+\]\s+(?:\{[^}]+\}\s+)?([^:\n]+?) \(cries out\):',
+    re.MULTILINE,
+)
 SECRET_PATTERNS = (
     ("UltiMafia session cookie", re.compile(r"connect\.sid=(?!<|\.{3})[^\s\"']{12,}", re.I)),
     ("authorization bearer token", re.compile(r"authorization\s*:\s*bearer\s+[A-Za-z0-9._~+/=-]{12,}", re.I)),
@@ -49,6 +53,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-batch-size", type=int, default=2)
     parser.add_argument("--gradient-accumulation", type=int, default=8)
     parser.add_argument("--logging-steps", type=int, default=20)
+    parser.add_argument(
+        "--eval-strategy",
+        choices=("epoch", "steps", "no"),
+        default="epoch",
+        help="Evaluate once per epoch by default; 'steps' uses --eval-steps.",
+    )
     parser.add_argument("--eval-steps", type=int, default=200)
     parser.add_argument("--save-steps", type=int, default=200)
     parser.add_argument("--seed", type=int, default=7)
@@ -121,6 +131,11 @@ def validate_file(path: Path) -> dict[str, Any]:
                 fail(f"{path}:{line_number}: assistant content is not JSON ({exc.msg})")
             if not isinstance(answer, dict) or answer.get("action") not in ALLOWED_ACTIONS:
                 fail(f"{path}:{line_number}: assistant action must be one of {sorted(ALLOWED_ACTIONS)}")
+            if answer.get("action") == "cry" and '\nCRY "' not in messages[1]["content"]:
+                fail(f"{path}:{line_number}: Cry label is not listed as a legal action")
+            for match in DISPLAYED_CRY_PATTERN.finditer(messages[1]["content"]):
+                if match.group(1).strip() != "Anonymous":
+                    fail(f"{path}:{line_number}: anonymous Cry sender is exposed in the briefing")
 
             meta = row.get("meta")
             if not isinstance(meta, dict) or meta.get("game") is None:
@@ -156,7 +171,7 @@ def validate_datasets(train_path: Path, eval_path: Path) -> tuple[dict[str, Any]
         )
     print_stats("train", train_stats)
     print_stats("eval", eval_stats)
-    print("privacy: no credential patterns found in message text")
+    print("privacy: no credential patterns or exposed Cry senders found in message text")
     print("split: train and eval game IDs are disjoint")
     return train_stats, eval_stats
 
@@ -274,11 +289,11 @@ def main() -> int:
             desc=f"Preparing {split} prompts and completions",
         )
     if args.max_train_samples:
-        dataset["train"] = dataset["train"].select(
+        dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(
             range(min(args.max_train_samples, len(dataset["train"])))
         )
     if args.max_eval_samples:
-        dataset["eval"] = dataset["eval"].select(
+        dataset["eval"] = dataset["eval"].shuffle(seed=args.seed).select(
             range(min(args.max_eval_samples, len(dataset["eval"])))
         )
 
@@ -297,8 +312,8 @@ def main() -> int:
         lr_scheduler_type="cosine",
         optim="adamw_8bit",
         logging_steps=args.logging_steps,
-        eval_strategy="steps",
-        eval_steps=args.eval_steps,
+        eval_strategy=args.eval_strategy,
+        eval_steps=args.eval_steps if args.eval_strategy == "steps" else None,
         save_strategy="steps",
         save_steps=args.save_steps,
         save_total_limit=2,

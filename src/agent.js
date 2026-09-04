@@ -55,7 +55,7 @@ export const DECISION_SCHEMA = {
   type: "object",
   properties: {
     reason: { type: "string" },
-    action: { type: "string", enum: ["say", "vote", "unvote", "wait"] },
+    action: { type: "string", enum: ["say", "cry", "vote", "unvote", "wait"] },
     meeting: { type: "string" },
     target: { type: "string" },
     text: { type: "string" },
@@ -161,6 +161,20 @@ export function speakableMeetings(raw) {
   return meetingsOf(raw).filter((m) => m.amMember && m.speech && m.canTalk);
 }
 
+function hasCryAbility(meeting) {
+  return (meeting.speechAbilities || []).some(
+    (ability) => String(ability?.name || "").toLowerCase() === "cry"
+  );
+}
+
+export function cryableMeetings(raw) {
+  return speakableMeetings(raw).filter(hasCryAbility);
+}
+
+function isSpeechAction(action) {
+  return action === "say" || action === "cry";
+}
+
 /**
  * The machine-readable half of the briefing: exactly which meetings the
  * model may act in and what it may put in them. Built from /raw rather than
@@ -184,6 +198,7 @@ export function legalActionsBlock(raw) {
   }
   for (const m of speakableMeetings(raw)) {
     lines.push(`SAY "${m.name}"`);
+    if (hasCryAbility(m)) lines.push(`CRY "${m.name}" (anonymous broadcast)`);
   }
   if (!lines.length) lines.push("(nothing to do right now — use wait)");
   return lines.join("\n");
@@ -269,6 +284,15 @@ export function splitChat(text, maxLines = 3) {
   return lines.map(sanitiseChat).filter(Boolean).slice(0, maxLines);
 }
 
+export function speechRequestBody(action, meeting, text) {
+  const body = { meeting, text };
+  if (action === "cry") {
+    body.ability = "Cry";
+    body.abilityTarget = "out";
+  }
+  return body;
+}
+
 function pickMeeting(hint, pool) {
   if (!pool.length) return { error: "no meeting available for that action" };
   const lower = String(hint || "").trim().toLowerCase();
@@ -307,16 +331,17 @@ export function validateDecision(
       return {
         ok: false,
         retry: true,
-        error: "something just happened that concerns you; waiting is not allowed this turn. Reply with say, or vote",
+        error: "something just happened that concerns you; waiting is not allowed this turn. Reply with say, cry, or vote",
       };
     }
     return { ok: true, action: "wait" };
   }
 
-  if (action === "say") {
+  if (isSpeechAction(action)) {
     const texts = splitChat(decision.text, maxLines);
-    if (!texts.length) return { ok: false, retry: true, error: "say needs non-empty text" };
-    const { meeting, error } = pickMeeting(decision.meeting, speakableMeetings(raw));
+    if (!texts.length) return { ok: false, retry: true, error: `${action} needs non-empty text` };
+    const pool = action === "cry" ? cryableMeetings(raw) : speakableMeetings(raw);
+    const { meeting, error } = pickMeeting(decision.meeting, pool);
     if (error) return { ok: false, retry: false, error };
     if (texts.some((t) => quotesSystemMessage(t, raw.messages))) {
       return {
@@ -328,7 +353,7 @@ export function validateDecision(
     if (now - lastSayAt < sayGap) {
       return { ok: false, retry: false, error: `spoke ${ago(now - lastSayAt)}; pacing` };
     }
-    return { ok: true, action: "say", meeting: meeting.name, text: texts[0], texts };
+    return { ok: true, action, meeting: meeting.name, text: texts[0], texts };
   }
 
   if (action === "vote") {
@@ -515,13 +540,14 @@ class Harness {
   }
 
   async dispatch(v) {
-    if (v.action === "say") {
+    if (isSpeechAction(v.action)) {
       // Several lines go out a few seconds apart, the way a person types
       // them. Stop at the first line the daemon refuses.
       let last;
       for (const [i, text] of v.texts.entries()) {
         if (i > 0) await sleep(2000 + Math.random() * 3000);
-        last = await daemon("/say", { method: "POST", body: { meeting: v.meeting, text } });
+        const body = speechRequestBody(v.action, v.meeting, text);
+        last = await daemon("/say", { method: "POST", body });
         if (!last.ok) return last;
       }
       return last;
@@ -622,7 +648,7 @@ class Harness {
         mustAct: mustAct && attempt === 0,
         maxLines: Math.min(opts.maxLines, allowance || 1),
       });
-      if (v.ok && v.action === "say" && allowance === 0) {
+      if (v.ok && isSpeechAction(v.action) && allowance === 0) {
         log(`rate limit: ${recent.length} lines in the last minute; holding this one`);
         return "wait";
       }
@@ -638,6 +664,8 @@ class Harness {
       const summary =
         v.action === "say"
           ? `said in "${v.meeting}": ${v.texts.join(" | ")}`
+          : v.action === "cry"
+            ? `cried anonymously in "${v.meeting}": ${v.texts.join(" | ")}`
           : v.action === "vote"
             ? `voted ${v.target} in "${v.meeting}"`
             : v.action === "unvote"
@@ -657,7 +685,7 @@ class Harness {
         continue;
       }
       log(summary);
-      if (v.action === "say") {
+      if (isSpeechAction(v.action)) {
         this.lastSayAt = Date.now();
         for (const _ of v.texts) this.sentTimes.push(Date.now());
         this.sentTimes = this.sentTimes.slice(-20);

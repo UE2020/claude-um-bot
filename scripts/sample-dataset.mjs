@@ -2,9 +2,9 @@
 // Cut a training set and a held-out set from build-dataset.mjs output.
 //
 // Chat lines outnumber votes five to one in the raw dump, and one chatty
-// player can contribute hundreds of near-identical examples. Keep every vote
-// and unvote, sample chat down to --say-ratio times the vote count, cap any
-// one seat, and hold out whole games (never split a game across sets).
+// player can contribute hundreds of near-identical examples. Keep every vote,
+// unvote and special speech action, sample ordinary chat down to --say-ratio
+// times the kept-action count, cap any one seat, and hold out whole games.
 //
 //   node scripts/sample-dataset.mjs --in data/train-full.jsonl \
 //        --train data/train.jsonl --eval data/eval.jsonl \
@@ -53,12 +53,12 @@ async function main() {
 
   const perSeat = {};
   const chosen = [];
-  const votes = index.filter((x) => x.action !== "say");
+  const mustKeep = index.filter((x) => x.action !== "say");
   const says = index.filter((x) => x.action === "say");
-  for (const x of votes) chosen.push(x);
+  for (const x of mustKeep) chosen.push(x);
   // Shuffle chat and take up to the ratio, respecting the per-seat cap.
   const shuffled = says.slice().sort(() => rand() - 0.5);
-  const sayBudget = Math.round(votes.length * sayRatio);
+  const sayBudget = Math.round(mustKeep.length * sayRatio);
   let taken = 0;
   for (const x of shuffled) {
     if (taken >= sayBudget) break;

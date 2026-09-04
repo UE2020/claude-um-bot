@@ -20,10 +20,11 @@ node scripts/sample-dataset.mjs --in data/train-full.jsonl --train data/train.js
 
 Defaults: Mafia-type games with 5+ players, a recorded winner and 100+ Village
 messages; seats on the winning side only (`--all-seats` to include losers);
-30 chat lines in the briefing. The sampler keeps every vote and unvote, samples
-chat down to twice the vote count, caps a seat at 40 chat examples, holds out
-5% of games whole, and caps the training side at 30,000 examples
-(`--max-train`), which is about one T4 session.
+30 chat lines in the briefing. The sampler keeps every vote, unvote and special
+speech action such as Cry; samples ordinary chat down to twice the kept-action
+count; caps a seat at 40 ordinary-chat examples; holds out 5% of games whole;
+and caps the training side at 30,000 examples (`--max-train`). A T4 is too slow
+for this full run; use a smaller smoke test there or a faster local GPU.
 
 What each seat is allowed to see is rebuilt from the archive: its own role,
 faction partners, flips, public alerts, and private reports whose checked
@@ -47,9 +48,14 @@ Changing `prompts/local-agent.md` afterwards means rebuilding and retraining.
 
 Each line is `{"messages": [system, user, assistant], "meta": {...}}`. The
 assistant turn is the same JSON the harness parses:
-`{"action":"say|vote|unvote","meeting":"...","target":"...","text":"..."}`.
+`{"action":"say|cry|vote|unvote","meeting":"...","target":"...","text":"..."}`.
 Chat sent within 15 seconds is merged into one example with lines separated by
 `|`, matching the harness's staggered multi-line sends.
+
+Archived review history retains the real sender id behind anonymous Crier
+messages. The builder recognizes the `cries out` marker, presents its author as
+`Anonymous` in every briefing, and labels the actor's decision as `cry` rather
+than the dangerous public `say`. Cry and ordinary chat are never merged.
 
 ## 2. Keep private material out of Git
 
@@ -120,16 +126,143 @@ the plumbing before a full run, add `--max-train-samples 64
 --max-eval-samples 32 --epochs 0.05` and omit `--save-gguf`.
 
 The defaults are a 4-bit LoRA, sequence length 3072, effective batch size 16,
-one epoch, a 2e-4 learning rate, 50 warmup steps, evaluation/checkpointing every
-200 steps and at most two retained checkpoints. The harness converts each
-three-message example to TRL's conversational `prompt` + `completion` format
+one epoch, a 2e-4 learning rate, 50 warmup steps, one evaluation at the end of
+the epoch, checkpointing every 200 steps and at most two retained checkpoints.
+Repeatedly evaluating all 6,000+ held-out examples is expensive; opt into it
+with `--eval-strategy steps --eval-steps N` only when needed. The harness
+converts each three-message example to TRL's conversational `prompt` + `completion` format
 and uses `completion_only_loss=True`. This also works around Unsloth releases
 whose patched trainer does not recognize a standalone `messages` column.
 See the official [TRL SFTTrainer documentation](https://huggingface.co/docs/trl/sft_trainer)
 and [Unsloth repository](https://github.com/unslothai/unsloth) if their APIs or
 Colab installation instructions change.
 
-## 4. Run it through the game harness
+## 4. Train on a local RTX 4090 (24 GB)
+
+The RTX 4090 is a much better fit for the full 4B/30,000-example run than a
+Colab T4. Exact throughput depends mostly on prompt lengths, library versions
+and thermals, so use the ETA after 10–20 optimizer steps rather than assuming a
+fixed duration.
+
+### System setup
+
+Linux or WSL2 Ubuntu is the simplest path. Native Windows is also supported by
+Unsloth; if using it, install a CUDA-enabled PyTorch build first and then run
+the same Python commands in PowerShell. Keep the repository and dataset on an
+SSD, and leave tens of gigabytes free for model downloads, checkpoints and the
+temporary files used during GGUF merging.
+
+Verify that the NVIDIA driver can see the card:
+
+```bash
+nvidia-smi
+```
+
+Clone the repository and create an isolated environment. Python 3.12 is a
+conservative choice for the CUDA training stack:
+
+```bash
+git clone https://github.com/YOUR_NAME/YOUR_REPO.git
+cd YOUR_REPO
+python3 -m venv .venv
+source .venv/bin/activate                 # PowerShell: .\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install --upgrade -r requirements-train.txt
+```
+
+Confirm that PyTorch is using the 4090 rather than silently falling back to
+the CPU:
+
+```bash
+python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0), torch.version.cuda)"
+```
+
+It must print `True` and identify the RTX 4090. If it does not, select the
+current CUDA wheel using the official PyTorch installer and reinstall Unsloth
+after PyTorch works. Unsloth's current installation guide recommends
+`pip install unsloth` and supports Linux, Windows and WSL; its Windows guide
+also covers Conda, Docker and WSL alternatives.
+
+### Copy and validate the data
+
+Send only `train.jsonl` and `eval.jsonl`, preferably over a private transfer.
+They contain game chat and perspective-specific information. Put them under
+`data/`; Git ignores them. The trainer does not need `mafia.db`, cookies,
+`config.json`, or any other runtime state.
+
+If you received `um-dataset.zip`, extract it from the repository root:
+
+```bash
+unzip um-dataset.zip -d data
+```
+
+In PowerShell, use:
+
+```powershell
+Expand-Archive -LiteralPath .\um-dataset.zip -DestinationPath .\data
+```
+
+The archive should create `data/train.jsonl` and `data/eval.jsonl`. You can
+delete the transferred ZIP after checking that both files are present.
+
+```bash
+python training/train.py --train data/train.jsonl --eval data/eval.jsonl --dry-run
+```
+
+Run a small end-to-end smoke test before committing to the full job. The sample
+limits are shuffled deterministically rather than taking the first games:
+
+```bash
+python training/train.py \
+  --train data/train.jsonl \
+  --eval data/eval.jsonl \
+  --output-dir training-output/smoke \
+  --max-train-samples 64 \
+  --max-eval-samples 32 \
+  --epochs 0.05
+```
+
+### Full 4090 run
+
+Start with a per-device batch of 4 and four accumulation steps. This preserves
+the default effective batch size of 16 while reducing accumulation overhead:
+
+```bash
+python training/train.py \
+  --train data/train.jsonl \
+  --eval data/eval.jsonl \
+  --model unsloth/Qwen3-4B-Instruct-2507 \
+  --output-dir training-output/qwen3-4b \
+  --batch-size 4 \
+  --eval-batch-size 4 \
+  --gradient-accumulation 4 \
+  --save-gguf
+```
+
+If that runs out of VRAM, retry with `--batch-size 2 --eval-batch-size 2
+--gradient-accumulation 8`. The effective batch remains 16. Do not reduce the
+sequence length merely to fix an OOM without auditing truncation: the action
+JSON is at the end of each example and must remain in the tokenized sequence.
+
+In another terminal, monitor utilization, temperature and memory with:
+
+```bash
+watch -n 2 nvidia-smi
+```
+
+The first few steps include kernel compilation. Judge speed after 10–20 steps;
+the training progress line reports seconds per optimizer step. If interrupted,
+rerun the full command with `--resume`. Checkpoints are written every 200 steps
+and only the newest two are retained. `--save-gguf` runs after training; the
+LoRA adapter is saved first under `training-output/qwen3-4b/adapter`, so a GGUF
+conversion failure does not discard the trained adapter.
+
+Official references: [Unsloth pip installation](https://unsloth.ai/docs/get-started/install-update/pip-install),
+[Unsloth Windows installation](https://unsloth.ai/docs/get-started/install/windows-installation),
+[Unsloth VRAM requirements](https://unsloth.ai/docs/get-started/fine-tuning-for-beginners/unsloth-requirements),
+and [PyTorch's local installation selector](https://pytorch.org/get-started/locally/).
+
+## 5. Run it through the game harness
 
 Download the GGUF, then:
 
@@ -148,7 +281,7 @@ Nothing in the harness changes. Use the same `--chat` the dataset was built
 with so the briefing matches training. On a dense model the tail budget can be
 large, since the cached prefix is reused at any split point.
 
-## 5. Measure before seating it
+## 6. Measure before seating it
 
 `data/eval.jsonl` holds whole games the model never saw. For each example, send
 the prompt and compare the model's JSON to the human's: exact match on votes,

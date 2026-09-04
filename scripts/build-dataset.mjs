@@ -24,6 +24,7 @@ import { renderCompactState } from "../src/render.js";
 import { Knowledge } from "../src/knowledge.js";
 import { buildTurnPrompt, splitChat, parseArgs, DEFAULTS } from "../src/agent.js";
 import { buildMentionRegex, isHostile, classifySystemMessage } from "../src/mentions.js";
+import { isCryMessage, visibleSenderId } from "../src/messages.js";
 import { inferCoreReportRecipients } from "./report-visibility.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -129,6 +130,7 @@ function replaySeat(g, h, seat, ctx, opts, emit) {
   const { players, roleByPlayer, alignByPlayer, knowledge, systemPrompt } = ctx;
   const P = seat;
   const myRole = roleByPlayer[P];
+  const myBaseRole = Knowledge.splitAppearance(myRole).role;
   const myFaction = alignByPlayer[P];
   const partners = FACTIONS.has(myFaction)
     ? Object.keys(players).filter((id) => id !== P && alignByPlayer[id] === myFaction)
@@ -240,6 +242,21 @@ function replaySeat(g, h, seat, ctx, opts, emit) {
         amMember: true,
         canVote: member.canVote !== false,
         canTalk: m.speech !== false,
+        // Review history omits per-seat speech abilities. Restore Cry for a
+        // Town Crier, and for any other seat whose archived action proves it
+        // had the ability in this meeting (Judge/cards can also grant it).
+        speechAbilities:
+          !startDead[P] &&
+          ((myBaseRole === "Town Crier" &&
+            /^(?:Village(?: Dusk)?|Room \d+)$/i.test(String(m.name || ""))) ||
+            (m.messages || []).some((msg) => msg.senderId === P && isCryMessage(msg)))
+            ? [
+                ...(m.speechAbilities || []).filter(
+                  (ability) => String(ability?.name || "").toLowerCase() !== "cry"
+                ),
+                { name: "Cry", targets: ["out"], targetType: "out", verb: "" },
+              ]
+            : m.speechAbilities || [],
       };
     }
 
@@ -290,10 +307,11 @@ function replaySeat(g, h, seat, ctx, opts, emit) {
       if (ev.kind === "msg") {
         st.addMessage({ ...ev.msg, meetingId: ev.meetingId });
         const c = String(ev.msg.content || "");
-        if (ev.msg.senderId !== P && ev.msg.senderId !== "server" && mentionRegex.test(c)) {
+        const senderId = visibleSenderId(ev.msg);
+        if (senderId !== P && senderId !== "server" && mentionRegex.test(c)) {
           const meetingName = st.meetings[ev.meetingId]?.name || "";
           sinceLast.mentions.push({
-            from: st.playerName(ev.msg.senderId),
+            from: st.playerName(senderId),
             content: c,
             hostile: !/mafia|cult/i.test(meetingName) && isHostile(c),
             faction: /mafia|cult/i.test(meetingName),
@@ -401,12 +419,20 @@ function replaySeat(g, h, seat, ctx, opts, emit) {
 
       if (ev.kind === "msg" && ev.msg.senderId === P && meeting?.canTalk) {
         // Group this and the seat's next few lines in the same meeting, the
-        // way the harness sends a multi-line turn.
+        // way the harness sends a multi-line turn. Never combine an anonymous
+        // Cry with an ordinary Say: they are different model actions.
+        const speechAction = isCryMessage(ev.msg) ? "cry" : "say";
         const lines = [];
         let j = i;
         while (j < events.length && lines.length < DEFAULTS.maxLines) {
           const e = events[j];
-          if (e.kind === "msg" && e.msg.senderId === P && e.meetingId === ev.meetingId && e.t - ev.t <= 15000) {
+          if (
+            e.kind === "msg" &&
+            e.msg.senderId === P &&
+            e.meetingId === ev.meetingId &&
+            (isCryMessage(e.msg) ? "cry" : "say") === speechAction &&
+            e.t - ev.t <= 15000
+          ) {
             lines.push(String(e.msg.content || ""));
             j++;
           } else if (e.kind === "msg" && e.msg.senderId === P) {
@@ -419,8 +445,10 @@ function replaySeat(g, h, seat, ctx, opts, emit) {
         if (clean.length) {
           emitSample(
             ev.t,
-            { action: "say", meeting: meeting.name, target: "", text: clean.join(" | ") },
-            `said in "${meeting.name}": ${clean.join(" | ")}`
+            { action: speechAction, meeting: meeting.name, target: "", text: clean.join(" | ") },
+            speechAction === "cry"
+              ? `cried anonymously in "${meeting.name}": ${clean.join(" | ")}`
+              : `said in "${meeting.name}": ${clean.join(" | ")}`
           );
         }
         // Apply everything up to j in order (our own lines included).

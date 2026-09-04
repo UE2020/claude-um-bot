@@ -1,6 +1,7 @@
 // Renders GameState into a text briefing dense enough to play from.
 
 import { Knowledge } from "./knowledge.js";
+import { visibleSenderId } from "./messages.js";
 
 function hr(title) {
   return `\n── ${title} ${"─".repeat(Math.max(0, 66 - title.length))}`;
@@ -18,6 +19,17 @@ function fmtClock(t) {
   if (!t) return "--:--";
   const d = new Date(t);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function messageSpeaker(state, message, { system = "***" } = {}) {
+  const senderId = visibleSenderId(message);
+  return senderId === "server" ? system : state.playerName(senderId);
+}
+
+function hasCryAbility(meeting) {
+  return (meeting.speechAbilities || []).some(
+    (ability) => String(ability?.name || "").toLowerCase() === "cry"
+  );
 }
 
 export function renderState(state, knowledge, opts = {}) {
@@ -271,7 +283,7 @@ export function renderState(state, knowledge, opts = {}) {
     if (msgs.length) {
       out.push(`      recent in-meeting:`);
       for (const msg of msgs) {
-        out.push(`        ${state.playerName(msg.senderId)}: ${msg.content}`);
+        out.push(`        ${messageSpeaker(state, msg, { system: "SYSTEM" })}: ${msg.content}`);
       }
     }
   }
@@ -282,7 +294,7 @@ export function renderState(state, knowledge, opts = {}) {
   for (const m of chat) {
     const meetingName = state.meetings[m.meetingId]?.name;
     const where = meetingName ? `{${meetingName}} ` : "";
-    const who = m.senderId === "server" ? "***" : state.playerName(m.senderId);
+    const who = messageSpeaker(state, m);
     const prefixStr = m.prefix ? ` (${m.prefix})` : "";
     out.push(`  [${fmtClock(m.time)}] ${where}${who}${prefixStr}: ${m.content}`);
   }
@@ -300,8 +312,8 @@ export function renderState(state, knowledge, opts = {}) {
   }
   for (const m of speakable) {
     out.push(`  um say "<text>" --meeting "${m.name}"`);
-    if (state.self?.role?.name === "Town Crier" || state.selfRole?.name === "Town Crier" || (m.speechAbilities && m.speechAbilities.some((a) => a.name === "Cry"))) {
-      out.push(`  um cry "<text>"                            # Broadcast anonymous message (Town Crier)`);
+    if (hasCryAbility(m)) {
+      out.push(`  um cry "<text>"                            # Broadcast anonymous message`);
     }
   }
 
@@ -497,7 +509,7 @@ export function renderCompactState(state, knowledge, opts = {}) {
   for (const m of chat) {
     const meetingName = state.meetings[m.meetingId]?.name;
     const where = meetingName ? `{${meetingName}} ` : "";
-    const who = m.senderId === "server" ? "***" : state.playerName(m.senderId);
+    const who = messageSpeaker(state, m);
     const prefixStr = m.prefix ? ` (${m.prefix})` : "";
     out.push(`  [${fmtClock(m.time)}] ${where}${who}${prefixStr}: ${m.content}`);
   }
@@ -507,7 +519,10 @@ export function renderCompactState(state, knowledge, opts = {}) {
   const speakable = state.speakableMeetings();
   const acts = [];
   for (const m of votable) acts.push(`um vote <target> --meeting "${m.name}"`);
-  for (const m of speakable) acts.push(`um say "<text>" --meeting "${m.name}"`);
+  for (const m of speakable) {
+    acts.push(`um say "<text>" --meeting "${m.name}"`);
+    if (hasCryAbility(m)) acts.push(`um cry "<text>" --meeting "${m.name}"`);
+  }
   acts.push(`um alarm (wait) | um state --full (detailed rules)`);
   out.push(`  ${acts.join(" | ")}`);
 
